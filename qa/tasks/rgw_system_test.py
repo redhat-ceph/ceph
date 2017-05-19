@@ -6,6 +6,7 @@ from teuthology.orchestra import run
 log = logging.getLogger(__name__)
 import os
 import pwd
+import cStringIO
 
 
 class Test(object):
@@ -253,6 +254,32 @@ def task(ctx, config):
 
     config['port_number'] = '8080'
     test_config = config['config']
+
+    # get the cluster size
+
+    out = cStringIO.StringIO()
+    clients[0].run(args=['sudo', 'ceph', 'df'], stdout=out)
+    var = out.readlines()
+    cluster_size = dict(zip(var[1].split(), var[2].split()))
+
+    available_cluster_size = int(cluster_size['AVAIL'][:-1]) * 1024   # size in MBs
+
+    usable_size = int((float(60) / float(100)) * available_cluster_size)  # 60 % of cluster size is being used for automation tests
+
+    osize = usable_size / \
+            (int(test_config['user_count']) *
+             int(test_config['bucket_count']) *
+             int(test_config['objects_count']))
+
+    if osize < 10 :
+        log.error('test does not support small size objects less than 10 MB ')
+        exit(1)
+
+    test_config['min_file_size'] = osize - 5
+    test_config['max_file_size'] = osize
+
+    log.info('calucated object max size: %s' % test_config['max_file_size'])
+    log.info('calucated object min size: %s' % test_config['min_file_size'])
 
     # basic Upload
 
